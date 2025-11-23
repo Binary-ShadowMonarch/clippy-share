@@ -1,0 +1,12 @@
+[package]
+name = "platform-adapters"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+crossbeam-channel.workspace = true
+calloop = "0.12"
+wayland-protocols = "0.31"
+wayland-protocols-wlr = "0.3"
+wayland-client = "0.31"

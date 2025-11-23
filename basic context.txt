@@ -1,0 +1,282 @@
+I'm building the clip share app that can also handle file sharing, copy paste files/text in linux/windows/android share in-between. for now the architecture is :
+ Documents/unfinished_business/clippy-share   main  ? ❯ tree -I "target"                                                                                                                                                    rs    13:29
+.
+├── Architecture.txt
+├── Cargo.lock
+├── Cargo.toml
+├── cli
+│   ├── Cargo.toml
+│   └── src
+│       └── main.rs
+├── core-daemon
+│   ├── Cargo.toml
+│   └── src
+│       └── lib.rs
+├── crypto-engine
+│   ├── Cargo.toml
+│   └── src
+│       └── lib.rs
+├── desktop-ui
+│   ├── Cargo.toml
+│   └── src
+│       └── main.rs
+├── mobile-bridge
+│   ├── Cargo.toml
+│   └── src
+│       └── main.rs
+├── net
+│   ├── Cargo.toml
+│   └── src
+│       └── lib.rs
+├── platform-adapters
+│   ├── Cargo.toml
+│   └── src
+│       ├── android.rs
+│       ├── lib.rs
+│       ├── wayland.rs
+│       ├── windows.rs
+│       └── x11.rs
+└── README.MD
+
+15 directories, 22 files
+and  basic context:
+Platform-Specific Clipboard Tools Windows: Use a Rust clipboard crate like clipboard-win (the clipboard-win crate) for efficient access and change events docs.rs docs.rs . It supports raw data formats (text, images, file lists) and even provides a Monitor API to wait for clipboard updates docs.rs docs.rs . Alternatively, one could call the Win32 API (AddClipboardFormatListener) via a Rust FFI, but clipboard-win is simple and high-performance. Linux (X11/Wayland): On X11, a Rust library such as x11-clipboard can block on load_wait to detect new CLIPBOARD selections (effectively polling for changes) docs.rs . For cross-platform usage, the arboard crate works on Linux for text and images docs.rs (though it doesn’t emit events, so you typically poll it). On Wayland, a crate like wl-clipboard-rs (or wayland-clipboard-listener) can be used to read the clipboard via the wlr-data-control protocol github.com . (Wayland has no global event, so background access may require XWayland or compositor-specific support.) Android (Flutter): Use a Flutter plugin such as clipboard_monitor or clipboard_watcher to get clipboard change callbacks in Dart pub.dev pub.dev . These plugins call into Android’s ClipboardManager and trigger Dart callbacks when new text is copied. Note that Android 10+ forbids background clipboard reads unless the app is in the foreground pub.dev pub.dev . In practice, you’d run a foreground service (with notification) or use an AccessibilityService (with user consent) to listen continuously. The Dart code might simply register a callback (ClipboardMonitor.registerCallback) to handle changes pub.dev . Each of these tools is open-source and Rust-friendly. For example, clipboard-win is pure Rust on Windows docs.rs , and x11-clipboard is a lightweight Rust library for X11 docs.rs . On Android, the Flutter plugins are written in Kotlin/Java under the hood but expose simple Dart APIs for clipboard events pub.dev . System Architecture Figure: Example P2P network of devices (illustrative). Each node runs a background clipboard daemon and directly syncs with other peers over LAN. All communication is end-to-end encrypted (no central server) github.com techbuzzonline.com . The overall design is fully peer-to-peer: each device runs the same Rust “core” service that watches the OS clipboard and broadcasts updates to all trusted peers (no cloud server). As in p2p-clipboard, the system uses mDNS/Bonjour to auto-discover peers on the local network and then opens secure direct links between them github.com . When one node sees a clipboard change, it encrypts the data (using a symmetric AEAD cipher) and sends it over each peer connection; peers in turn forward the data in a mesh. The architecture is decentralized: there’s no relay or broker – every node is both a client and a server github.com github.com . This mesh model (with optional pre-shared network password or key fingerprinting) ensures strong privacy. By default all traffic runs over TLS or a Noise handshake (e.g. X25519 key exchange with AES-256-GCM/ChaCha20-Poly1305), so clipboard payloads remain E2E-encrypted techbuzzonline.com . Each node only accepts clipboard data from approved peers: on first contact, the user confirms the peer’s identity (e.g. comparing public-key fingerprints or QR codes) before trusting it. Thus user consent is required and sensitive data is never sent to unapproved parties. All inter-device links use authenticated encryption (with optional PSK) techbuzzonline.com , and the code stores keys only in memory. Sequence numbers or acknowledgments prevent duplication or loss, and a newly-joined peer immediately gets the latest clipboard content on reconnect. In short, the system is a private LAN P2P clipboard network with robust delivery and true end-to-end encryption github.com techbuzzonline.com . Detailed Components & Modules Clipboard Watcher/Manager: Platform-specific code polls or hooks into the OS clipboard. On Windows we use clipboard-win to open the clipboard and optionally use its Monitor iterator docs.rs . On Linux (X11) we use x11-clipboard’s load_wait on the CLIPBOARD selection docs.rs ; on Wayland we rely on wl-clipboard-rs or fall back to XWayland. In practice, the Rust core normalizes all clipboard types: text, HTML, images (e.g. PNG via arboard docs.rs ), files (Windows supports CF_HDROP lists docs.rs ), and any raw MIME it knows. The watcher runs in the background daemon (or service), so it can catch copies even if no UI is open. On Android, the Flutter plugin uses ClipboardManager and emits events while the app/service is active; the core Rust logic reads from a local channel rather than directly touching Android APIs. Crypto Module: Every node holds a persistent key pair (e.g. X25519/Ed25519). On connecting to a peer, they perform a Noise or TLS handshake to establish a shared session key. We use an AEAD cipher (AES-256-GCM or ChaCha20-Poly1305) for each clipboard payload techbuzzonline.com . Optionally a PSK (from the config) is mixed into the handshake to restrict the network. After the handshake, raw clipboard bytes (even images/files) are encrypted before sending. Because keys stay on-device, the sync is truly end-to-end: intermediaries (other peers) cannot decrypt contents. This follows best practices of using TLS or Noise for transport encryption techbuzzonline.com . Networking & Transport: An async Rust layer (Tokio) handles discovery and messaging. By default, each node sends out an mDNS broadcast announcing its presence. Discovered peers connect over TCP or QUIC (using rustls or a Noise stream). The protocol is flooding: when a node receives a new clipboard message, it forwards it to all of its connected peers (so the update floods the mesh) github.com . Reliable delivery is achieved by keeping sequence numbers and retransmitting missed items if a peer reconnects. Network I/O is encrypted (TLS/Noise) on every link. Ports/addresses can be configured manually in a config file if mDNS is disabled (e.g. on VPN). Config & Auth: Configuration (e.g. in JSON/TOML) stores the local node’s keypair, trusted peer list (with human names), PSK, and sync settings. A companion UI allows adding/removing peers or setting a LAN password. When a new peer appears, the user is prompted to approve it (see p2p-clipboard’s manual peer approval model github.com ). No clipboard is shared until the peer is trusted. All cryptographic keys (private keys, PSKs) are kept only in memory or local config – none are leaked on the wire. Desktop UI (Qt6): A C++/QML frontend provides status, settings, and optional manual copy/paste commands. It connects to the Rust daemon via a local IPC (e.g. UNIX socket or loopback TCP with JSON/RPC). Qt’s QClipboard can show the current content in the UI or allow the user to trigger a “sync now.” However, all heavy lifting (network, crypto, OS clipboard access) is done by the Rust core. This decoupling (daemon + GUI) allows the clipboard service to run continuously (as a systemd/user service or Windows service) even when the UI is closed. Mobile UI (Flutter): On Android, we bundle the Rust core into a background service (via a Flutter-Rust bridge plugin pub.dev ). The Flutter UI (Dart) shows paired devices and notifications of incoming clipboard items. When the user copies something, the ClipboardMonitor plugin invokes a Dart callback pub.dev , and we forward that text into the Rust core for encryption and broadcast. Similarly, when a network message arrives, the Rust core sends it to Flutter (via the plugin), which may pop a notification (e.g. “New clipboard – Tap to paste”). On Android 10+ we use a foreground service (with a permanent notification) to keep the app alive for listening, since background clipboard access is disallowed pub.dev pub.dev . Each component is modular and testable. For example, the Clipboard I/O layer uses well-known Rust crates (clipboard-win, x11-clipboard, arboard, wl-clipboard-rs) instead of hand-rolling low-level code docs.rs docs.rs docs.rs . The Crypto layer uses established crates (ring, noise-protocol, or rustls) for key exchange and AEAD, mirroring approaches in similar tools techbuzzonline.com . The Networking uses tokio for async I/O, and mdns crates for discovery github.com . By cleanly separating these (watcher, crypto, network, UI), the system remains reliable, secure, and extensible. All communication is encrypted in transit, and peers must be explicitly authorized, so privacy is protected github.com techbuzzonline.com . Sources: We based this design on existing P2P clipboard tools and libraries. For instance, p2p-clipboard demonstrates a pure-P2P encrypted sync with mDNS discovery github.com . The [clipboard-win][3] and [x11-clipboard][12] crates provide the OS-specific clipboard I/O. Flutter plugins like [clipboard_monitor][56] can stream Android clipboard events. Android 10’s privacy changes confirm we need a foreground service pub.dev . These and other references guided the cross-platform architecture outlined above.
+
+what the files contains:
+cli/src/main.rs
+#[tokio::main]
+async fn main() {
+    println!("Starting daemon...");
+    let daemon = core_daemon::CoreDaemon::new();
+    daemon.run().await;
+}
+cargo :
+[package]
+name = "cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+core-daemon = { path = "../core-daemon" }
+
+core-daemon/src/lib.rs
+use platform_adapters::{ClipboardAdapter, ClipData};
+use crypto_engine::CryptoEngine;
+use net::Net;
+use tokio::task;
+
+pub struct CoreDaemon {
+    crypto: CryptoEngine,
+    net: Net,
+}
+
+impl CoreDaemon {
+    pub fn new() -> Self {
+        Self {
+            crypto: CryptoEngine::new(),
+            net: Net,
+        }
+    }
+pub async fn run(&self) {
+        println!("Core daemon start");
+
+        // Start networking
+        task::spawn(Net::start());
+
+        // Start clipboard listener (stub: X11)
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let adapter: Box<dyn ClipboardAdapter> = platform_adapters::create_adapter();
+        adapter.start(tx);
+
+        loop {
+            if let Ok(item) = rx.recv() {
+                println!("Core got clipboard: {:?}", item);
+
+                let bytes = match item {
+                    ClipData::Text(s) => s.into_bytes(),
+                    _ => vec![]
+                };
+
+                let encrypted = self.crypto.encrypt(&bytes);
+                self.net.broadcast(encrypted).await;
+            }
+        }
+    }
+}
+cargo :
+[package]
+name = "core-daemon"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+platform-adapters = { path = "../platform-adapters" }
+net = { path = "../net" }
+crypto-engine = { path = "../crypto-engine" }
+crossbeam-channel.workspace = true
+
+crypto-engine/src/lib.rs
+pub struct CryptoEngine;
+
+impl CryptoEngine {
+    pub fn new() -> Self {
+        Self
+    }
+    pub fn encrypt(&self, data: &[u8]) -> Vec<u8> {
+        println!("[stub] encrypt {} bytes", data.len());
+        data.to_vec()
+    }
+    pub fn decrypt(&self, data: &[u8]) -> Vec<u8> {
+        println!("[stub] decrypt {} bytes", data.len());
+        data.to_vec()
+    }
+}
+cargo :
+[package]
+name = "crypto-engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+net/src/lib.rs
+pub struct Net;
+
+impl Net {
+    pub async fn start() {
+        println!("[stub] net started");
+    }
+
+    pub async fn broadcast(&self, _data: Vec<u8>) {
+        println!("[stub] broadcasting {} bytes", _data.len());
+    }
+}
+cargo :
+[package]
+name = "net"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+
+platform-adapters/src/wayland.rs:
+use crate::{ClipData, ClipboardAdapter};
+use crossbeam_channel::Sender;
+
+use std::io::{BufRead, BufReader};
+use std::process::{Command, Stdio};
+use std::thread;
+
+pub struct WaylandAdapter;
+
+impl WaylandAdapter {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl ClipboardAdapter for WaylandAdapter {
+    fn start(&self, tx: Sender<ClipData>) {
+        thread::spawn(move || {
+            println!("[Wayland] Clipboard watcher started (wl-paste --watch)");
+
+            let mut child = Command::new("wl-paste")
+                .arg("--watch")
+                .arg("cat")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("Failed to run wl-paste --watch");
+
+            let stdout = child.stdout.take().expect("Failed to read stdout");
+            let reader = BufReader::new(stdout);
+
+            for line in reader.lines() {
+                if let Ok(text) = line {
+                    if !text.trim().is_empty() {
+                        let _ = tx.send(ClipData::Text(text));
+                    }
+                }
+            }
+
+            println!("[Wayland] Clipboard watcher stopped");
+        });
+    }
+}
+platform-adapters/src/lib.rs
+use crossbeam_channel::Sender;
+
+pub mod android;
+pub mod wayland;
+pub mod windows;
+pub mod x11;
+
+#[derive(Debug, Clone)]
+pub enum ClipData {
+    Text(String),
+    Raw { mime_type: String, bytes: Vec<u8> },
+}
+pub trait ClipboardAdapter: Send + Sync {
+    fn start(&self, tx: Sender<ClipData>);
+}
+
+pub fn create_adapter() -> Box<dyn ClipboardAdapter> {
+    #[cfg(target_os = "windows")]
+    {
+        return Box::new(windows::WindowsAdapter::new());
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        return Box::new(android::AndroidAdapter::new());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var("WAYLAND_DISPLAY").is_ok() {
+            println!("Detected Wayland session.");
+            return Box::new(wayland::WaylandAdapter::new());
+        }
+        if std::env::var("DISPLAY").is_ok() {
+            println!("Detected X11 session.");
+            return Box::new(x11::X11Adapter::new());
+        }
+        eprintln!("No display server detected. Clipboard unavailable.");
+        return Box::new(android::AndroidAdapter::new()); // harmless stub fallback
+    }
+}
+cargo :
+[package]
+name = "platform-adapters"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+crossbeam-channel.workspace = true
+calloop = "0.12"
+wayland-protocols = "0.31"
+wayland-protocols-wlr = "0.3"
+wayland-client = "0.31"
+other android/windows/x11.rs dummy :
+use crossbeam_channel::Sender;
+use crate::{ClipboardAdapter, ClipData};
+
+pub struct AndroidAdapter;
+
+impl ClipboardAdapter for AndroidAdapter {
+    fn start(&self, tx: Sender<ClipData>) {
+        println!("[stub] Android clipboard watching started");
+        tx.send(ClipData::Text("Hello from Android stub".to_string())).unwrap();
+    }
+}
+
+impl AndroidAdapter {
+    pub fn new() -> Self {
+        AndroidAdapter
+    }
+}
+with different names!
+the desktop-ui and mobile bridge can be ignored, just hello world shell!

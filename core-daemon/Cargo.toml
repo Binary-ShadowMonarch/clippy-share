@@ -1,0 +1,12 @@
+[package]
+name = "core-daemon"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio.workspace = true
+platform-adapters = { path = "../platform-adapters" }
+net = { path = "../net" }
+crypto-engine = { path = "../crypto-engine" }
+crossbeam-channel.workspace = true
+

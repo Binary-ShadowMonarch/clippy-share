@@ -1,0 +1,14 @@
+[workspace]
+resolver = "3"
+members = [
+    "cli",
+    "core-daemon",
+    "platform-adapters",
+    "net",
+    "crypto-engine",
+    "desktop-ui",
+    "mobile-bridge"
+]
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+crossbeam-channel = "0.5"
