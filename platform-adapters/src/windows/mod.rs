@@ -1,6 +1,7 @@
-use crate::{ClipData, ClipboardAdapter};
 use crossbeam_channel::Sender;
+use crate::{ClipData, ClipboardAdapter};
 
+#[derive(Debug)]
 pub struct WindowsAdapter;
 
 impl WindowsAdapter {
@@ -11,7 +12,7 @@ impl WindowsAdapter {
 
 impl ClipboardAdapter for WindowsAdapter {
     fn start(&self, _tx: Sender<ClipData>) {
-        // Stub: real implementation should use clipboard-win crate or Win32 API.
-        println!("[windows] start() stub - not implemented yet");
+        eprintln!("Windows clipboard adapter not implemented yet.");
     }
 }
+

@@ -1,20 +1,36 @@
+use crate::{ClipData, ClipboardAdapter};
 use crossbeam_channel::Sender;
 
-/// xdg-desktop-portal backend stub
-pub struct PortalBackend;
+/// TODO: Implement XDG Desktop Portal clipboard listener for GNOME support
+///
+/// This adapter should use the XDG Desktop Portal API to listen for clipboard
+/// changes on GNOME Wayland sessions, which don't support wlr-data-control.
+///
+/// Recommended implementation approach:
+/// 1. Use the `ashpd` crate for XDG Portal communication
+/// 2. Request clipboard access via org.freedesktop.portal.Clipboard
+/// 3. Listen for SelectionOwnerChanged signals
+/// 4. Read clipboard contents when changes are detected
+///
+/// References:
+/// - ashpd: https://github.com/bilelmoussaoui/ashpd
+/// - XDG Desktop Portal spec: https://flatpak.github.io/xdg-desktop-portal/
+/// - Clipboard portal: https://flatpak.github.io/xdg-desktop-portal/#gdbus-org.freedesktop.portal.Clipboard
+///
+/// Note: Portal-based clipboard access may require user permission grants.
 
-pub fn is_supported() -> bool {
-    // Real detection should check DBus for org.freedesktop.portal.Desktop.
-    false
+pub struct PortalAdapter;
+
+impl PortalAdapter {
+    pub fn new() -> Self {
+        PortalAdapter
+    }
 }
 
-impl PortalBackend {
-    pub fn new() -> Self {
-        PortalBackend
-    }
-
-    pub fn start(&self, _tx: Sender<crate::ClipData>) {
-        // Stub: real implementation will subscribe to portal clipboard events via DBus.
-        println!("[portal] start() stub - not implemented yet");
+impl ClipboardAdapter for PortalAdapter {
+    fn start(&self, _tx: Sender<ClipData>) {
+        eprintln!("❌ XDG Desktop Portal clipboard adapter not yet implemented.");
+        eprintln!("💡 This is needed for GNOME Wayland support.");
+        eprintln!("📝 TODO: Implement using ashpd crate or similar Portal API library.");
     }
 }

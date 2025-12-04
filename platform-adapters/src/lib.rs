@@ -15,6 +15,7 @@ pub trait ClipboardAdapter: Send + Sync {
     fn start(&self, tx: Sender<ClipData>);
 }
 
+
 pub fn create_adapter() -> Box<dyn ClipboardAdapter> {
     #[cfg(target_os = "windows")]
     {
@@ -32,16 +33,14 @@ pub fn create_adapter() -> Box<dyn ClipboardAdapter> {
             println!("Detected Wayland session.");
             return Box::new(wayland::WaylandAdapter::new());
         }
+
         if std::env::var("DISPLAY").is_ok() {
             println!("Detected X11 session.");
             return Box::new(x11::X11Adapter::new());
         }
+
         eprintln!("No display server detected. Clipboard unavailable.");
-        return Box::new(android::AndroidAdapter::new()); // harmless stub fallback
+        return Box::new(android::AndroidAdapter::new());
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
-    {
-        compile_error!("Unsupported target for platform-adapters::create_adapter");
-    }
 }

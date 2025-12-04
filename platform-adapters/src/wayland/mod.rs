@@ -1,51 +1,58 @@
-mod gtk_clipboard;
-mod portal;
-mod wlr_data_control;
-
 use crate::{ClipData, ClipboardAdapter};
 use crossbeam_channel::Sender;
 
-pub use gtk_clipboard::GtkBackend;
-pub use portal::PortalBackend;
-pub use wlr_data_control::WlrBackend;
+pub mod portal;
+pub mod wlroots;
 
 pub struct WaylandAdapter {
-    backend: Backend,
-}
-
-enum Backend {
-    Wlr(WlrBackend),
-    Portal(PortalBackend),
-    Gtk(GtkBackend),
-    Stub,
+    inner: Box<dyn ClipboardAdapter>,
 }
 
 impl WaylandAdapter {
     pub fn new() -> Self {
-        let backend = if wlr_data_control::is_supported() {
-            Backend::Wlr(WlrBackend::new())
-        } else if portal::is_supported() {
-            Backend::Portal(PortalBackend::new())
-        } else if gtk_clipboard::is_supported() {
-            Backend::Gtk(GtkBackend::new())
+        // Detect which Wayland compositor/protocol to use
+        let inner: Box<dyn ClipboardAdapter> = if Self::is_gnome_wayland() {
+            println!("🔍 Detected GNOME Wayland session");
+            println!("⚠️  Portal adapter not yet implemented, falling back to wlroots");
+            // TODO: Once portal is implemented, use:
+            // Box::new(portal::PortalAdapter::new())
+            Box::new(wlroots::WlrootsAdapter::new())
         } else {
-            eprintln!("No Wayland clipboard protocols available.");
-            Backend::Stub
+            println!("🔍 Detected wlroots-compatible Wayland session");
+            Box::new(wlroots::WlrootsAdapter::new())
         };
 
-        Self { backend }
+        WaylandAdapter { inner }
+    }
+
+    /// Detect if running under GNOME Wayland
+    /// GNOME doesn't support wlr-data-control protocol
+    fn is_gnome_wayland() -> bool {
+        // Check for GNOME session indicators
+        if let Ok(desktop) = std::env::var("XDG_CURRENT_DESKTOP") {
+            if desktop.to_lowercase().contains("gnome") {
+                return true;
+            }
+        }
+
+        if let Ok(session) = std::env::var("GDMSESSION") {
+            if session.to_lowercase().contains("gnome") {
+                return true;
+            }
+        }
+
+        if let Ok(session) = std::env::var("DESKTOP_SESSION") {
+            if session.to_lowercase().contains("gnome") {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
 impl ClipboardAdapter for WaylandAdapter {
     fn start(&self, tx: Sender<ClipData>) {
-        match &self.backend {
-            Backend::Wlr(backend) => backend.start(tx),
-            Backend::Portal(backend) => backend.start(tx),
-            Backend::Gtk(backend) => backend.start(tx),
-            Backend::Stub => {
-                eprintln!("No clipboard backend available for Wayland (stub).");
-            }
-        }
+        self.inner.start(tx);
     }
 }
