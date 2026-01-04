@@ -1,15 +1,25 @@
 [package]
 name = "platform-adapters"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-sled = "0.34"
+crossbeam-channel = { workspace = true }
+once_cell = "1.19"
+
+# Wayland dependencies - only on desktop Linux (not Android)
+[target.'cfg(all(target_os = "linux", not(target_os = "android")))'.dependencies]
 wayland-clipboard-listener = { git = "https://github.com/Decodetalkers/wayland-clipboard-listener" }
-tokio.workspace = true
-crossbeam-channel.workspace = true
 calloop = "0.12"
 wayland-protocols = "0.31"
 wayland-protocols-wlr = "0.3"
 wayland-client = "0.31"
-bincode = "2.0"
+
+# Windows dependencies
+[target.'cfg(windows)'.dependencies]
+# Add Windows-specific clipboard libraries here when implementing
+# For example: clipboard-win = "4.5"
+
+# Android dependencies
+[target.'cfg(target_os = "android")'.dependencies]
+# Android-specific dependencies if needed

@@ -2,3 +2,5 @@ target/
 .env
 .env/
 .git/
+Architecture.txt
+basic context.txt

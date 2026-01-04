@@ -1,9 +1,17 @@
 use crossbeam_channel::Sender;
 
 pub mod android;
+
+// Only compile wayland module on Linux (not Android)
+#[cfg(all(unix, not(target_os = "android")))]
 pub mod wayland;
-pub mod windows;
+
+// Only compile x11 module on Linux (not Android)
+#[cfg(all(unix, not(target_os = "android")))]
 pub mod x11;
+
+#[cfg(windows)]
+pub mod windows;
 
 #[derive(Debug, Clone)]
 pub enum ClipData {
@@ -14,7 +22,6 @@ pub enum ClipData {
 pub trait ClipboardAdapter: Send + Sync {
     fn start(&self, tx: Sender<ClipData>);
 }
-
 
 pub fn create_adapter() -> Box<dyn ClipboardAdapter> {
     #[cfg(target_os = "windows")]
@@ -27,20 +34,25 @@ pub fn create_adapter() -> Box<dyn ClipboardAdapter> {
         return Box::new(android::AndroidAdapter::new());
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", not(target_os = "android")))]
     {
         if std::env::var("WAYLAND_DISPLAY").is_ok() {
             println!("Detected Wayland session.");
             return Box::new(wayland::WaylandAdapter::new());
         }
-
         if std::env::var("DISPLAY").is_ok() {
             println!("Detected X11 session.");
             return Box::new(x11::X11Adapter::new());
         }
-
         eprintln!("No display server detected. Clipboard unavailable.");
+        // Fallback to a stub adapter
         return Box::new(android::AndroidAdapter::new());
     }
 
+    // Fallback for other platforms
+    #[cfg(not(any(windows, target_os = "android", target_os = "linux")))]
+    {
+        eprintln!("Unsupported platform for clipboard monitoring");
+        return Box::new(android::AndroidAdapter::new());
+    }
 }

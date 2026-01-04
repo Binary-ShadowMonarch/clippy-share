@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<resources>
+    <string name="app_name">ClippyShare</string>
+    <string name="accessibility_service_description">ClippyShare needs accessibility permission to monitor clipboard changes in the background. This allows the app to sync your clipboard across devices.</string>
+</resources>
