@@ -17,14 +17,14 @@ impl AndroidAdapter {
 
 impl ClipboardAdapter for AndroidAdapter {
     fn start(&self, tx: Sender<ClipData>) {
-        eprintln!("[AndroidAdapter] 🤖 Android clipboard adapter initialized");
-        eprintln!("[AndroidAdapter] 📋 Waiting for clipboard events from Kotlin...");
+        log::info!("🤖 Android clipboard adapter initialized");
+        log::info!("📋 Waiting for clipboard events from Kotlin...");
 
         // Store the sender globally so JNI can access it
         let mut guard = CLIP_SENDER.lock().expect("CLIP_SENDER mutex poisoned");
         *guard = Some(tx);
-        eprintln!("[AndroidAdapter] CLIP_SENDER has been set");
+        log::info!("CLIP_SENDER has been set");
 
-        eprintln!("[AndroidAdapter] ✅ Android adapter ready to receive clipboard data");
+        log::info!("✅ Android adapter ready to receive clipboard data");
     }
 }

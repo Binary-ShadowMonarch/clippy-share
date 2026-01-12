@@ -9,4 +9,5 @@ platform-adapters = { path = "../platform-adapters" }
 net = { path = "../net" }
 crypto-engine = { path = "../crypto-engine" }
 crossbeam-channel.workspace = true
+log = "0.4"
 

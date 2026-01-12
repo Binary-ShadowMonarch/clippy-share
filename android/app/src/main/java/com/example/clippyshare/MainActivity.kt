@@ -17,6 +17,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.ClipboardManager
+import android.content.ClipData
 
 class MainActivity : AppCompatActivity() {
 
@@ -24,6 +26,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
+    private lateinit var sendClipboardButton: Button
     private val NOTIFICATION_PERMISSION_REQUEST_CODE = 1001
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,6 +36,7 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         startButton = findViewById(R.id.startButton)
         stopButton = findViewById(R.id.stopButton)
+        sendClipboardButton = findViewById(R.id.sendClipboardButton)
 
         // Load Rust library
         System.loadLibrary("mobile_bridge")
@@ -63,6 +67,10 @@ class MainActivity : AppCompatActivity() {
 
         stopButton.setOnClickListener {
             stopService()
+        }
+
+        sendClipboardButton.setOnClickListener {
+            sendClipboard()
         }
 
         checkAndUpdateStatus()
@@ -138,6 +146,24 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateStatus(message: String) {
         statusText.text = message
+    }
+
+    private fun sendClipboard() {
+        val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipData = clipboardManager.primaryClip
+        
+        if (clipData != null && clipData.itemCount > 0) {
+            val text = clipData.getItemAt(0).coerceToText(this).toString()
+            if (text.isNotEmpty()) {
+                RustBridge.shareText(text)
+                Toast.makeText(this, "Clipboard content sent!", Toast.LENGTH_SHORT).show()
+                Log.d(TAG, "Sent clipboard text to daemon: ${text.take(50)}...")
+            } else {
+                Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            Toast.makeText(this, "No clipboard content available", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onRequestPermissionsResult(
