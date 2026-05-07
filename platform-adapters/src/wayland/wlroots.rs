@@ -1,4 +1,4 @@
-use crate::{ClipData, ClipboardAdapter};
+use crate::{ClipData, ClipboardAdapter, ClipboardError};
 use crossbeam_channel::Sender;
 use std::thread;
 use wayland_clipboard_listener::{WlClipboardPasteStream, WlListenType};
@@ -108,5 +108,14 @@ impl ClipboardAdapter for WlrootsAdapter {
                 }
             }
         });
+    }
+
+    fn set_text(&self, text: &str) -> Result<(), ClipboardError> {
+        let mut clipboard = arboard::Clipboard::new()
+            .map_err(|err| ClipboardError::new(format!("Failed to open clipboard handle: {err}")))?;
+
+        clipboard
+            .set_text(text.to_string())
+            .map_err(|err| ClipboardError::new(format!("Failed to set Wayland clipboard text: {err}")))
     }
 }

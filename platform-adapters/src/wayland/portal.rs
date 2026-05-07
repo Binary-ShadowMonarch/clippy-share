@@ -1,4 +1,4 @@
-use crate::{ClipData, ClipboardAdapter};
+use crate::{ClipData, ClipboardAdapter, ClipboardError};
 use crossbeam_channel::Sender;
 
 /// TODO: Implement XDG Desktop Portal clipboard listener for GNOME support
@@ -32,5 +32,11 @@ impl ClipboardAdapter for PortalAdapter {
         eprintln!("❌ XDG Desktop Portal clipboard adapter not yet implemented.");
         eprintln!("💡 This is needed for GNOME Wayland support.");
         eprintln!("📝 TODO: Implement using ashpd crate or similar Portal API library.");
+    }
+
+    fn set_text(&self, _text: &str) -> Result<(), ClipboardError> {
+        Err(ClipboardError::new(
+            "Portal clipboard apply is not implemented yet",
+        ))
     }
 }

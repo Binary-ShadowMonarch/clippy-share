@@ -1,168 +1,187 @@
 package com.example.clippyshare
 
-import android.accessibilityservice.AccessibilityServiceInfo
-import android.content.Context
+import android.Manifest
+import android.content.ClipboardManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.util.Log
-import android.view.accessibility.AccessibilityManager
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import android.Manifest
-import android.content.pm.PackageManager
-import android.content.ClipboardManager
-import android.content.ClipData
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
+    private val tag = "MainActivity"
+    private val notificationPermissionRequestCode = 1001
 
-    private val TAG = "MainActivity"
+    private lateinit var modeText: TextView
     private lateinit var statusText: TextView
     private lateinit var startButton: Button
     private lateinit var stopButton: Button
     private lateinit var sendClipboardButton: Button
-    private val NOTIFICATION_PERMISSION_REQUEST_CODE = 1001
+
+    private var rootGranted = false
+    private var rootReason = ""
+    private var noRootDialogShown = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        modeText = findViewById(R.id.modeText)
         statusText = findViewById(R.id.statusText)
         startButton = findViewById(R.id.startButton)
         stopButton = findViewById(R.id.stopButton)
         sendClipboardButton = findViewById(R.id.sendClipboardButton)
 
-        // Load Rust library
-        System.loadLibrary("mobile_bridge")
-
-        // Start Rust daemon
+        RustBridge.init(applicationContext)
         RustBridge.startDaemon()
 
-        // Request notification permission (Android 13+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    NOTIFICATION_PERMISSION_REQUEST_CODE
-                )
-            }
-        }
+        requestNotificationPermissionIfNeeded()
+        checkRootModeOnce()
 
         startButton.setOnClickListener {
-            if (isAccessibilityServiceEnabled()) {
-                startService()
-            } else {
-                showAccessibilityServiceDialog()
-            }
+            startBackgroundMonitoring()
         }
 
         stopButton.setOnClickListener {
-            stopService()
+            stopBackgroundMonitoring()
         }
 
         sendClipboardButton.setOnClickListener {
-            sendClipboard()
+            sendClipboardNow()
         }
 
-        checkAndUpdateStatus()
+        updateStatus()
     }
 
     override fun onResume() {
         super.onResume()
-        checkAndUpdateStatus()
+        updateStatus()
     }
 
-    private fun checkAndUpdateStatus() {
-        if (isAccessibilityServiceEnabled()) {
-            if (ClipboardService.isRunning) {
-                updateStatus("Clipboard monitoring active")
-            } else {
-                updateStatus("Ready - Click Start to begin monitoring")
-            }
-        } else {
-            updateStatus("⚠️ Accessibility permission required")
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+
+        if (
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                notificationPermissionRequestCode
+            )
         }
     }
 
-    private fun isAccessibilityServiceEnabled(): Boolean {
-        val accessibilityManager = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-        val enabledServices = accessibilityManager.getEnabledAccessibilityServiceList(
-            AccessibilityServiceInfo.FEEDBACK_GENERIC
-        )
-        return enabledServices.any { it.resolveInfo.serviceInfo.packageName == packageName }
-    }
+    private fun checkRootModeOnce() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val result = RootSessionManager.requestRootSession()
+            withContext(Dispatchers.Main) {
+                rootGranted = result.granted
+                rootReason = result.reason
 
-    private fun showAccessibilityServiceDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Enable Accessibility Service")
-            .setMessage("ClippyShare needs accessibility permission to monitor clipboard changes in the background. Please enable it in the next screen.")
-            .setPositiveButton("Open Settings") { _, _ ->
-                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                startActivity(intent)
-                Toast.makeText(this, "Please enable ClippyShare in the accessibility settings", Toast.LENGTH_LONG).show()
+                if (!rootGranted) {
+                    showNoRootDialog(result.reason)
+                }
+
+                updateStatus()
             }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
     }
 
-    private fun startService() {
-        if (!isAccessibilityServiceEnabled()) {
-            showAccessibilityServiceDialog()
+    private fun startBackgroundMonitoring() {
+        if (!rootGranted) {
+            showNoRootDialog(rootReason)
             return
         }
 
         if (ClipboardService.isRunning) {
-            Toast.makeText(this, "Service already running!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.service_already_running, Toast.LENGTH_SHORT).show()
+            updateStatus()
             return
         }
 
-        val serviceIntent = Intent(this, ClipboardService::class.java)
+        val intent = Intent(this, ClipboardService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent)
+            startForegroundService(intent)
         } else {
-            startService(serviceIntent)
+            startService(intent)
         }
-        updateStatus("Clipboard service started")
-        Toast.makeText(this, "Clipboard monitoring started!", Toast.LENGTH_SHORT).show()
-        Log.d(TAG, "Clipboard service started")
+
+        Toast.makeText(this, R.string.service_started, Toast.LENGTH_SHORT).show()
+        updateStatus()
     }
 
-    private fun stopService() {
-        val serviceIntent = Intent(this, ClipboardService::class.java)
-        stopService(serviceIntent)
-        updateStatus("Clipboard service stopped")
-        Toast.makeText(this, "Clipboard monitoring stopped", Toast.LENGTH_SHORT).show()
-        Log.d(TAG, "Clipboard service stopped")
+    private fun stopBackgroundMonitoring() {
+        val intent = Intent(this, ClipboardService::class.java)
+        stopService(intent)
+        Toast.makeText(this, R.string.service_stopped, Toast.LENGTH_SHORT).show()
+        updateStatus()
     }
 
-    private fun updateStatus(message: String) {
-        statusText.text = message
-    }
+    private fun sendClipboardNow() {
+        RustBridge.init(applicationContext)
 
-    private fun sendClipboard() {
-        val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clipboardManager = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
         val clipData = clipboardManager.primaryClip
-        
-        if (clipData != null && clipData.itemCount > 0) {
-            val text = clipData.getItemAt(0).coerceToText(this).toString()
-            if (text.isNotEmpty()) {
-                RustBridge.shareText(text)
-                Toast.makeText(this, "Clipboard content sent!", Toast.LENGTH_SHORT).show()
-                Log.d(TAG, "Sent clipboard text to daemon: ${text.take(50)}...")
+
+        if (clipData == null || clipData.itemCount <= 0) {
+            Toast.makeText(this, R.string.no_clipboard_content, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val text = clipData.getItemAt(0).coerceToText(this).toString()
+        if (text.isBlank()) {
+            Toast.makeText(this, R.string.empty_clipboard, Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        RustBridge.shareText(text)
+        Toast.makeText(this, R.string.clipboard_sent, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showNoRootDialog(reason: String) {
+        if (noRootDialogShown) {
+            return
+        }
+        noRootDialogShown = true
+
+        AlertDialog.Builder(this)
+            .setTitle(R.string.no_root_title)
+            .setMessage(
+                getString(
+                    R.string.no_root_message,
+                    reason.ifBlank { getString(R.string.no_root_reason_unknown) }
+                )
+            )
+            .setPositiveButton(R.string.ok, null)
+            .show()
+    }
+
+    private fun updateStatus() {
+        if (rootGranted) {
+            modeText.text = getString(R.string.mode_root_active)
+            statusText.text = if (ClipboardService.isRunning) {
+                getString(R.string.status_root_running)
             } else {
-                Toast.makeText(this, "Clipboard is empty", Toast.LENGTH_SHORT).show()
+                getString(R.string.status_root_ready)
             }
         } else {
-            Toast.makeText(this, "No clipboard content available", Toast.LENGTH_SHORT).show()
+            modeText.text = getString(R.string.mode_manual_only)
+            statusText.text = getString(R.string.status_manual_only)
         }
     }
 
@@ -172,17 +191,13 @@ class MainActivity : AppCompatActivity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) {
+
+        if (requestCode == notificationPermissionRequestCode) {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.d(TAG, "Notification permission granted")
+                Log.d(tag, "Notification permission granted")
             } else {
-                Log.w(TAG, "Notification permission denied")
+                Log.w(tag, "Notification permission denied")
             }
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        stopService()
     }
 }

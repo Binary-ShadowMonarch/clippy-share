@@ -5,31 +5,25 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.ClipboardManager
-import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 class ClipboardService : Service() {
+    private val tag = "ClipboardService"
 
-    private val clipboardJob: Job
     private val notificationId = 1
     private val channelId = "clipboard_service_channel"
     private val channelName = "Clipboard Monitor"
-    private val mutex = Mutex()
+    private var clipboardManager: ClipboardManager? = null
+    private var clipboardListener: ClipboardManager.OnPrimaryClipChangedListener? = null
     private var lastText = ""
 
     companion object {
         var isRunning = false
-    }
-
-    init {
-        clipboardJob = SupervisorJob()
     }
 
     override fun onCreate() {
@@ -47,7 +41,10 @@ class ClipboardService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        clipboardJob.cancel()
+        clipboardListener?.let { listener ->
+            clipboardManager?.removePrimaryClipChangedListener(listener)
+        }
+        clipboardListener = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         isRunning = false
         super.onDestroy()
@@ -71,7 +68,7 @@ class ClipboardService : Service() {
     private fun createNotification(): Notification {
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("ClippyShare")
-            .setContentText("Monitoring clipboard changes...")
+            .setContentText("Background clipboard sync is active")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -79,35 +76,44 @@ class ClipboardService : Service() {
     }
 
     private fun startClipboardMonitoring() {
-        val clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        if (!RootSessionManager.hasActiveSession()) {
+            Log.w(tag, "Skipping background monitoring: root session is not active")
+            stopSelf()
+            return
+        }
+
+        if (clipboardListener != null) {
+            return
+        }
+
+        clipboardManager = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
 
         // Initial clipboard content
-        val currentClip = clipboardManager.primaryClip
+        val currentClip = clipboardManager?.primaryClip
         if (currentClip != null && currentClip.itemCount > 0) {
             lastText = currentClip.getItemAt(0).coerceToText(this).toString()
         }
 
-        CoroutineScope(Dispatchers.Main + clipboardJob).launch {
-            while (isActive) {
-                try {
-                    delay(500) // Check every 500ms to avoid battery drain
-
-                    mutex.withLock {
-                        val newClip = clipboardManager.primaryClip
-                        if (newClip != null && newClip.itemCount > 0) {
-                            val newText = newClip.getItemAt(0).coerceToText(this@ClipboardService).toString()
-
-                            if (newText.isNotEmpty() && newText != lastText) {
-                                lastText = newText
-                                // Send to Rust daemon
-                                RustBridge.onClipboardChanged(newText)
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    // Continue monitoring even if there's an error
+        clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+            try {
+                val newClip = clipboardManager?.primaryClip ?: return@OnPrimaryClipChangedListener
+                if (newClip.itemCount <= 0) {
+                    return@OnPrimaryClipChangedListener
                 }
+
+                val newText = newClip.getItemAt(0).coerceToText(this).toString()
+                if (newText != lastText && RustBridge.shouldForwardClipboardEvent(newText)) {
+                    lastText = newText
+                    RustBridge.onClipboardChanged(newText)
+                }
+            } catch (e: SecurityException) {
+                Log.w(tag, "Clipboard access blocked by platform policy")
+            } catch (e: Exception) {
+                Log.e(tag, "Failed to process clipboard update", e)
             }
         }
+
+        clipboardManager?.addPrimaryClipChangedListener(clipboardListener)
+        Log.i(tag, "Event-driven clipboard listener started")
     }
 }

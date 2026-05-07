@@ -1,4 +1,4 @@
-use crate::{ClipData, ClipboardAdapter};
+use crate::{ClipData, ClipboardAdapter, ClipboardError};
 use crossbeam_channel::Sender;
 
 #[derive(Debug)]
@@ -15,5 +15,11 @@ impl ClipboardAdapter for WindowsAdapter {
         eprintln!("❌ Windows clipboard adapter not yet implemented.");
         eprintln!("💡 This is needed for Windows desktop support.");
         eprintln!("📝 TODO: Implement using clipboard-win or Windows API directly.");
+    }
+
+    fn set_text(&self, _text: &str) -> Result<(), ClipboardError> {
+        Err(ClipboardError::new(
+            "Windows clipboard apply is not implemented yet",
+        ))
     }
 }

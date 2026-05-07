@@ -1,4 +1,5 @@
 use crossbeam_channel::Sender;
+use std::fmt::{Display, Formatter};
 
 pub mod android;
 
@@ -19,8 +20,30 @@ pub enum ClipData {
     Raw { mime_type: String, bytes: Vec<u8> },
 }
 
+#[derive(Debug, Clone)]
+pub struct ClipboardError {
+    message: String,
+}
+
+impl ClipboardError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl Display for ClipboardError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for ClipboardError {}
+
 pub trait ClipboardAdapter: Send + Sync {
     fn start(&self, tx: Sender<ClipData>);
+    fn set_text(&self, text: &str) -> Result<(), ClipboardError>;
 }
 
 pub fn create_adapter() -> Box<dyn ClipboardAdapter> {

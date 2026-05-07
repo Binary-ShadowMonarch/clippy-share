@@ -1,4 +1,4 @@
-use crate::{ClipData, ClipboardAdapter};
+use crate::{ClipData, ClipboardAdapter, ClipboardError};
 use crossbeam_channel::Sender;
 
 pub mod portal;
@@ -54,5 +54,9 @@ impl WaylandAdapter {
 impl ClipboardAdapter for WaylandAdapter {
     fn start(&self, tx: Sender<ClipData>) {
         self.inner.start(tx);
+    }
+
+    fn set_text(&self, text: &str) -> Result<(), ClipboardError> {
+        self.inner.set_text(text)
     }
 }

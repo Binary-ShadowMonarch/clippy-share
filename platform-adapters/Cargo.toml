@@ -10,6 +10,7 @@ log = "0.4"
 
 # Wayland dependencies - only on desktop Linux (not Android)
 [target.'cfg(all(target_os = "linux", not(target_os = "android")))'.dependencies]
+arboard = "3"
 wayland-clipboard-listener = { git = "https://github.com/Decodetalkers/wayland-clipboard-listener" }
 calloop = "0.12"
 wayland-protocols = "0.31"

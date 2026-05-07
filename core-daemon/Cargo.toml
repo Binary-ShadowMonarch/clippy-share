@@ -7,7 +7,6 @@ edition = "2024"
 tokio.workspace = true
 platform-adapters = { path = "../platform-adapters" }
 net = { path = "../net" }
-crypto-engine = { path = "../crypto-engine" }
 crossbeam-channel.workspace = true
 log = "0.4"
 

@@ -2,4 +2,28 @@
 <resources>
     <string name="app_name">ClippyShare</string>
     <string name="accessibility_service_description">ClippyShare needs accessibility permission to monitor clipboard changes in the background. This allows the app to sync your clipboard across devices.</string>
+    <string name="mode_checking">Mode: checking root availability…</string>
+    <string name="status_loading">Initializing app state…</string>
+    <string name="mode_root_active">Mode: root-enabled background sync</string>
+    <string name="mode_manual_only">Mode: manual send only</string>
+    <string name="status_root_running">Background clipboard sync is running.</string>
+    <string name="status_root_ready">Root is available. Start background sync when ready.</string>
+    <string name="status_manual_only">Background clipboard sync is disabled on this device. Open app and tap Send Clipboard.</string>
+    <string name="start_background_sync">Start Background Sync</string>
+    <string name="stop_background_sync">Stop Background Sync</string>
+    <string name="send_clipboard_now">Send Clipboard Now</string>
+    <string name="service_already_running">Background sync is already running</string>
+    <string name="service_started">Background sync started</string>
+    <string name="service_stopped">Background sync stopped</string>
+    <string name="no_clipboard_content">No clipboard content available</string>
+    <string name="empty_clipboard">Clipboard is empty</string>
+    <string name="clipboard_sent">Clipboard sent</string>
+    <string name="no_root_title">Root Access Not Available</string>
+    <string name="no_root_message">Background clipboard sync cannot run without root.
+
+Reason: %1$s
+
+You can still use manual mode by opening the app and tapping Send Clipboard.</string>
+    <string name="no_root_reason_unknown">Unknown reason</string>
+    <string name="ok">OK</string>
 </resources>
